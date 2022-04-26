@@ -15,6 +15,9 @@ local({
 ## Additional R packages needed by the user (CRAN)
 install.packages("bookdown")
 install.packages("mvtnorm")
+install.packages("xtable")
+install.packages("ranger")
+install.packages("parallel")
 ## ____________________________________________________
 
 ## ____________________________________________________
