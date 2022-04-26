@@ -14,6 +14,7 @@ local({
 ## ____________________________________________________
 ## Additional R packages needed by the user (CRAN)
 install.packages("bookdown")
+install.packages("mvtnorm")
 ## ____________________________________________________
 
 ## ____________________________________________________
