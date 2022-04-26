@@ -13,8 +13,11 @@ local({
 
 ## ____________________________________________________
 ## Additional R packages needed by the user (CRAN)
-## example: remote
-## install.packages("anRpackage")
+install.packages("bookdown")
+install.packages("mvtnorm")
+install.packages("xtable")
+install.packages("ranger")
+install.packages("parallel")
 ## ____________________________________________________
 
 ## ____________________________________________________
