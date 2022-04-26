@@ -10,7 +10,7 @@ on:
       - master
 
 env: # Change this if needed
-  Rmarkdown-file: template-computo-Rmarkdown.Rmd
+  Rmarkdown-file: LocalForest.Rmd
 
 jobs:
   build_computorticle:
