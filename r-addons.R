@@ -13,8 +13,7 @@ local({
 
 ## ____________________________________________________
 ## Additional R packages needed by the user (CRAN)
-## example: remote
-## install.packages("anRpackage")
+install.packages("bookdown")
 ## ____________________________________________________
 
 ## ____________________________________________________
