@@ -7,16 +7,16 @@ output:
   bookdown::pdf_document2:
     includes:
       in_header: 
- - \usepackage{microtype}
- - \usepackage{graphicx}
- - \usepackage{subfigure}
- - \usepackage{booktabs} 
- - \usepackage{mathtools}
- - \usepackage{amssymb}
- - \usepackage{mathptmx}     
- - \usepackage{dsfont}
- - \usepackage[]{algorithm}
- - \usepackage[]{algorithmic}
+        - \usepackage{microtype}
+        - \usepackage{graphicx}
+        - \usepackage{subfigure}
+        - \usepackage{booktabs} 
+        - \usepackage{mathtools}
+        - \usepackage{amssymb}
+        - \usepackage{mathptmx}     
+        - \usepackage{dsfont}
+        - \usepackage[]{algorithm}
+        - \usepackage[]{algorithmic}
     toc: yes
     toc_depth: '2'
     number_sections: true
