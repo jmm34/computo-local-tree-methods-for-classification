@@ -17,19 +17,6 @@ output:
  - \usepackage{dsfont}
  - \usepackage[]{algorithm}
  - \usepackage[]{algorithmic}
- - \DeclareMathOperator*{\argmax}{argmax}
- - \DeclareMathOperator*{\diag}{diag}
- - \newcommand{\xs}{x^*}
- - \newcommand{\xsj}{x_j^*}
- - \newcommand{\xsij}{x_j^{*(i)}}
- - \newcommand{\inroot}{\in\text{ROOT}}
- - \newcommand{\Khj}[1]{K_{h_j}(x_j^{(#1)} - \xsj)}
- - \newcommand{\KV}[1]{K_V(x^{(#1)}-\xs)}
- - \newcommand{\idxi}{^{(i)}}
- - \newcommand{\Nmin}{N_\text{min}}
- - \newcommand{\mtry}{m_\text{try}}
- - \newcommand{\indicator}{\mathds{1}}
- - \renewcommand{\P}{\mathbb{P}}
     toc: yes
     toc_depth: '2'
     number_sections: true
@@ -75,9 +62,7 @@ $\\newcommand{\\Nmin}{N_\\text{min}}$
 $\\newcommand{\\mtry}{m_\\text{try}}$
 $\\newcommand{\\indicator}{\\mathds{1}}$
 $\\renewcommand{\\P}{\\mathbb{P}}$
-
 '`
-
 
 <button type="button" class="btn" title="Print to PDF" onClick="window.print()">Export to PDF</button>
 
@@ -874,7 +859,7 @@ The results in themselves are not interpretable due to the low dimensionality of
 ######## Balanced Gaussian example without Noise Small ########
 
 #### Required packages
-library("xtable")
+library(xtable)
 library(mvtnorm)
 library(ranger)
 library(parallel)
