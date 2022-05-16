@@ -64,9 +64,9 @@ $\\renewcommand{\\P}{\\mathbb{P}}$
 # Abstract
 In intractable likelihood context, Approximate Bayesian computation (ABC) approaches are very useful and flexible.
 They circumvent the likelihood computation by solely relying on simulations from the Bayesian hierarchical model.
-In model choice context, the powerful ABC Random Forests (ABC-RF) strategy of @pudlo:etal:2016 is to use 
+In model choice context, the ABC Random Forests (ABC-RF) strategy of @pudlo:etal:2016 consists in using 
 random forests [@breiman:2001] on training sets composed of simulations coming from the Bayesian generative models.
-The use of Random Forests (RF) is motivated by some theoretical guarantees for sparse problems they exhibit [@biau:2012;@scornet:etal:2015] and the fact that their performances are quite good even if no tuning is performed. The ABC-RF technique is based on underlying RF for which training and prediction phases are separated. The training phase does not take into account the data we would like to predict. That seems sub-optimal as in the ABC framework only one observation is of interest for prediction. In this paper, we study tree-based methods built to predict a specific instance in a classification setting. This kind of methods falls within the scope of local (lazy/instance-based/case specific) classification learning. We review some existing strategies and propose two new ones. The first one consists in modifying the tree splitting rule by using kernels, the second in using a first RF to compute some local variable importance used for training a second, more local, RF. Unfortunately these approaches, even though interesting, do not provide conclusive results.
+The use of Random Forests (RF) is motivated by some theoretical guarantees for sparse problems they exhibit [@biau:2012;@scornet:etal:2015] and the fact that their performances are quite good even if no tuning is performed. The ABC-RF technique is based on an underlying RF for which training and prediction phases are separated. The training phase does not take into account the data to predict. That seems sub-optimal as in the ABC framework only one observation is of interest for prediction. In this paper, we study tree-based methods built to predict a specific instance in a classification setting. This kind of methods falls within the scope of local (lazy/instance-based/case specific) classification learning. We review some existing strategies and propose two new ones. The first one consists in modifying the tree splitting rule by using kernels, the second in using a first RF to compute some local variable importance used for training a second, more local, RF. Unfortunately these approaches, even though interesting, do not provide conclusive results.
 
 
 # Introduction
@@ -78,8 +78,7 @@ Two closely related learning fields need to be mentioned: semi-supervised learni
 
 The main drawback of local learning approaches is their high computational cost, because for each new test data a model has to be constructed. However, it can be very useful in domains where only one test instance is provided.
 
-When the likelihood is intractable, a statistical approach was developed: the approximate Bayesian computation (ABC, @tavare:etal:1997; @pritchard:etal:1999).
-This strategy relies on simulations according to Bayesian hierarchical models to generate pseudo-data. These artificial data are then compared to the test/observed one. The most basic algorithm is based on nearest neighbors (NN). Recently, @breiman:2001's machine learning algorithm of random forests (RF) proved to bring a meaningful improvement to the ABC paradigm in both a context of model choice [@pudlo:etal:2016] and parameter inference [@raynal:etal:2019]. 
+The approximate Bayesian computation (ABC, @tavare:etal:1997; @pritchard:etal:1999) is a statistical method developed for frameworks where the likelihood is intractable. It relies on simulations according to Bayesian hierarchical models to generate pseudo-data. These artificial data are then compared to the test/observed one. To this effec, the most basic algorithm is based on nearest neighbors (NN). Recently, @breiman:2001's machine learning algorithm of random forests (RF) proved to bring a meaningful improvement to the ABC paradigm in both a context of model choice [@pudlo:etal:2016] and parameter inference [@raynal:etal:2019]. 
 Here, we focus on the model choice problem and thus the classification setting.
 Unlike some ABC techniques that take advantage of local methods, such as local adjustment [@beaumont:etal:2002; @blum:francois:2010; @blum:etal:2013], ABC-RF trains an eager RF to predict, later on, the observed data.
 It seems sub-optimal because in the ABC framework only the observed data is of interest for prediction.
@@ -107,7 +106,7 @@ An RF is a set of randomized trees [@breiman:etal:1984], each one partitioning t
 A binary tree is composed of internal and terminal nodes (a.k.a. leaves).
 For each internal node, a splitting rule on an explanatory variable is determined by maximizing an information gain, dividing the training set in two parts. This process is recursively iterated until a stopping rule is achieved. The internal node encountering a stopping rule becomes terminal.
 For continuous covariates, a splitting rule compares a covariate $X_j$ to a bound $s$, allocating to the left branch the data verifying the rule $X_j \leq s$, and to the right all others.
-For categorical covariates, the splitting rule is chosen among all the possible two way splits of the covariate categories.
+For categorical covariates, the splitting rule is chosen among all the possible two-way splits of the covariate categories.
 
 The covariate index $j$ and the bound $s$ are chosen to maximize the decrease of impurity between the mother, denoted $t$, and the two resulting left and right daughter nodes, denoted $t_L$ and $t_R$, (weighted by the number of data at each node). This gain associated to a covariate $j$ and split value $s$ is always non negative and is written as
 \begin{equation}
@@ -261,7 +260,7 @@ LazyDT provides three other major features: the use of discretised explanatory v
 
 - This algorithm only handles discretised explanatory variables. A preliminary discretisation is thus necessary, using for example the minimum description length principle [@fayyad:irani:1995]. This was initially introduced to enhance the algorithm speed. 
     According to our experiments this might also be useful when noise variables are considered as features. Indeed, for continuous covariates the construction might stop early due to some noise variables. For example, for a given covariate $j$, $\xsj$ can unfortunately be localized on one of the two covariate borders with few data all carrying some identical labels. The next splitting rule will isolate them with $\xsj$ because the resulting node will be pure and hence provide the maximum gain even though highly uninformative. The discretisation will be an asset in such situations since pure noise variables are more likely to be discretised into a unique category.
-- The use of \textit{options} is introduced. Indeed, because features can induce very similar information gains, @friedman:etal:1997 advise to develop all the paths -- induced by splitting rules -- achieving at least $90\%$ of the maximal possible gain. The prediction associated to a tree for $\xs$ becomes the prediction of the leaf with the maximal number of individuals in its majority class. We tried values different from $90\%$ and it did not provide better results.
+- The use of *options* is introduced. Indeed, because features can induce very similar information gains, @friedman:etal:1997 advise to develop all the paths -- induced by splitting rules -- achieving at least $90\%$ of the maximal possible gain. The prediction associated to a tree for $\xs$ becomes the prediction of the leaf with the maximal number of individuals in its majority class. We tried values different from $90\%$ and it did not provide better results.
     Moreover, we studied an alternative to this method of prediction: because each option provides a prediction for $\xs$, we considered taking as final prediction the majority vote of these option predictions, but again
     results were not more conclusive.
 - Finally, LazyDT only considers split values exactly equal to the values of $\xs$ as potential cuts.
@@ -276,11 +275,9 @@ Most local methods are based on weights depending on the proximity to $\xs$. Thi
 [@cleveland:1979;@cleveland:devlin:1988; @fan:1993; @hastie:loader:1993]. There are different ways to use weights 
 in the context of tree methods. One can think of taking into account these weights to define the training sets on which 
 trees are built. Such type of strategy is described in Section \@ref(sec:localWeightingOfIndividuls).
-In this section, we examine the possibility of using the weights during the tree construction, inside the tree splitting criterion.
+In this section, we examine the possibility of using weights during tree construction, inside the tree splitting criterion.
 
-In the wake of locally weighted regression, we set to each training individual and per covariate $j$, 
-a weight depending on its proximity to $\xsj$: the closer the higher. 
-To do so, we consider for each covariate $j$ a Gaussian kernel centered in $\xsj$, 
+In the wake of locally weighted regression, we set a weight to each training individual and per covariate $j$ depending on its proximity to $\xsj$ in the covariate $j$ space. We consider a Gaussian kernel centered in $\xsj$, 
 providing weights 
 $$
     \Khj{i}, \;\; \text{for} \;\; i\in\{1,\ldots,N\}.
@@ -759,7 +756,7 @@ respectively of size $10,000$ and $1,000$, equally distributed among the three s
 Moreover, the data are constrained to be drawn in the $[-1;1]^2$ square on the LDA axes projections graph, which is a region where scenarios are hard to discriminate, see Figure \@ref(fig:popGen-LDA).
 
 ```{r popGen-LDA, out.width="40%", fig.cap="Population genetics example: projections on the LDA axes of the $10,000$ training instances ;     colors represent scenario indices: red for model 1, blue for model 2 and blue for model 3 ;    the hard to discriminate $[-1;1]^2$ region is represented by black dashed lines.", fig.align='center'}
-knitr::include_graphics("Fig4.png")
+knitr::include_graphics("Ex3-Snp-1.png")
 ```
 
 
@@ -788,7 +785,7 @@ knitr::kable(TableOrdered,caption= "Population Genetics example: prediction erro
 # Data accessibility and reproducibility {#reproducibility}
 
 
-The global computational time for the examples presented above represent several days of multiple cores usage and are therefore not directly proposed to the reader. All codes, data and session information are available at XXXXX.
+The global computational time for the examples presented above represent several days of multiple cores usage and are therefore not directly proposed to the reader. All codes, data and session information are available at https://github.com/jmm34/computo-local-tree-methods-for-classification.
 
 In this section, we reproduce the first Gaussian example presented above (without additional noise) with only 500 training data, 100 test data and 5 replicates, to illustrate the methods and produce similar tables to Tables \@ref(tab:gaussEq10) to \@ref(tab:GenPopResults).
 The results in themselves are not interpretable due to the low dimensionality of the test and training data, so most methods were only illustrated with one set of parameters. However, changing parameters value in the code is straightforward.
