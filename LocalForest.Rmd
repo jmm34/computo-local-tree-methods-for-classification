@@ -705,7 +705,7 @@ plot(x.train[,1], x.train[,2], col=couleur,xlab="X1",ylab="X2",pch=8,cex=0.8)
 
 ```{r gaussUnb10, message=FALSE, warning=FALSE, results="asis", echo=TRUE}
 library(xtable)
-resTOT<-read.table("Gaussian-Unbalanced-No-Noise/Example-Gaussian-Unbalanced-No-Noise-Res-10000-probelm-csrf.txt",header=T)
+resTOT<-read.table("Gaussian-Unbalanced-No-Noise/Example-Gaussian-Unbalanced-No-Noise-Res-10000.txt",header=T)
 resTOT<-100*resTOT
 
 Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
