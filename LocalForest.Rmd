@@ -726,7 +726,7 @@ knitr::kable(TableOrdered,caption= "Second Gaussian example: prediction error ra
 
 ```{r gaussUnbNoise10, message=FALSE, warning=FALSE, results="asis", echo=TRUE}
 library(xtable)
-resTOT<-read.table("Gaussian-Unbalanced-With-Noise/Example-Gaussian-Unbalanced-With-Noise-Res-10000-problem-csrf.txt",header=T)
+resTOT<-read.table("Gaussian-Unbalanced-With-Noise/Example-Gaussian-Unbalanced-With-Noise-Res-10000.txt",header=T)
 resTOT<-100*resTOT
 
 Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
@@ -765,7 +765,7 @@ In this example again, bagging CARTs outperforms a classic random forest, which 
 
 ```{r GenPopResults, message=FALSE, warning=FALSE, results="asis", echo=TRUE}
 library(xtable)
-resTOT<-read.table("Population-Genetics/Example-Population-Genetics-Res-problem-csrf.txt",header=T)
+resTOT<-read.table("Population-Genetics/Example-Population-Genetics-Res.txt",header=T)
 resTOT<-100*resTOT
 
 Identifier<-c("Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
@@ -778,7 +778,6 @@ rownames(TableOrdered)=NULL
 knitr::kable(TableOrdered,caption= "Population Genetics example: prediction error rate (percentage), with 10000 training data and 1000 test data",booktabs=T,label= "GenPopResults",row.names=NA)
 
 ```
-
 
 # Data accessibility and reproducibility {#reproducibility}
 
