@@ -630,7 +630,7 @@ knitr::kable(TableOrdered,caption= "First Gaussian example: prediction error rat
 
 ```{r gaussEqNoise10, message=FALSE, warning=FALSE, results="asis", echo=TRUE}
 library(xtable)
-resTOT<-read.table("Gaussian-Balanced-With-Noise/Example-Gaussian-Balanced-With-Noise-Res-10000-problem-csrf.txt",header=T)
+resTOT<-read.table("Gaussian-Balanced-With-Noise/Example-Gaussian-Balanced-With-Noise-Res-10000.txt",header=T)
 resTOT<-100*resTOT
 
 Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
@@ -787,7 +787,7 @@ The global computational time for the examples presented above represent several
 In this section, we reproduce the first Gaussian example presented above (without additional noise) with only 500 training data, 100 test data and 5 replicates, to illustrate the methods and produce similar tables to Tables \@ref(tab:gaussEq10) to \@ref(tab:GenPopResults).
 The results in themselves are not interpretable due to the low dimensionality of the test and training data, so most methods were only illustrated with one set of parameters. However, changing parameters value in the code is straightforward.
 
-```{r ToyEx, message=FALSE, warning=FALSE, eval=FALSE, results="asis", echo=TRUE}
+```{r ToyEx, message=FALSE, warning=FALSE, eval=TRUE, results="asis", echo=TRUE}
 ######## Toy example : Small balanced Gaussian example without Noise  ########
 
 #### Required packages
