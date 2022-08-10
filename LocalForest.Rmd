@@ -460,6 +460,7 @@ In counterpart, weighted covariate sampling might increase the prediction correl
    
 ******
 
+
 \begin{algorithm}[tb]
    \caption{Local weighting of covariates}
    \label{alg:covWeights}
@@ -783,7 +784,7 @@ knitr::kable(TableOrdered,caption= "Population Genetics example: prediction erro
 # Data accessibility and reproducibility {#reproducibility}
 
 
-The global computational time for the examples presented above represent several days of multiple cores usage and are therefore not directly proposed to the reader. All codes, data and session information are available at https://github.com/jmm34/computo-local-tree-methods-for-classification.
+The global computational time for the examples presented above represent several days of multiple cores usage and are therefore not directly proposed to the reader. All codes, data and session information are available at [github.com/jmm34/computo-local-tree-methods-for-classification](https://github.com/jmm34/computo-local-tree-methods-for-classification). Note that during the preparation of the manuscript we detect an [issue](https://github.com/imbs-hl/ranger/issues/615) in the implementation of the Case Specific Random Forests function (csrf) function of the R package ranger and have to redo quite a lot of calculation to ensure reproducibility. 
 
 In this section, we reproduce the first Gaussian example presented above (without additional noise) with only 500 training data, 100 test data and 5 replicates, to illustrate the methods and produce similar tables to Tables \@ref(tab:gaussEq10) to \@ref(tab:GenPopResults).
 The results in themselves are not interpretable due to the low dimensionality of the test and training data, so most methods were only illustrated with one set of parameters. However, changing parameters value in the code is straightforward.
