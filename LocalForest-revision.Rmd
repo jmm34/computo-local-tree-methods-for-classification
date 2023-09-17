@@ -1,0 +1,1112 @@
+---
+title: "Local tree methods for classification: a review and some dead ends"
+author: "Alice Cleynen, Louis Raynal and Jean-Michel Marin"
+site: bookdown::pdf_document2
+date: "`r Sys.Date()`"
+output:
+  bookdown::html_document2:
+    extra_dependencies:
+       algorithm: null
+       algorithmic: null
+       mathtools: null 
+       microtype: null
+       graphicx: null
+       booktabs: null
+       amssymb: null
+       mathptmx: null
+       dsfont: null
+    highlight: tango
+    number_sections: yes
+    theme: yeti
+    toc: yes
+    toc_depth: 2
+    code_folding: hide
+    mathjax: default
+  bookdown::pdf_document2:
+    includes:
+      in_header: Packages.sty
+    toc: yes
+    toc_depth: '2'
+    highlight: tango
+    number_sections: true
+link-citations: yes
+bibliography: biblio-local-RF.bib
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(tidy = FALSE, fig.width = 8, fig.height = 8, echo = knitr::is_html_output())
+options(htmltools.dir.version = FALSE)
+```
+
+<!--- For HTML Only --->
+`r if (!knitr:::is_latex_output()) '
+$\\DeclareMathOperator*{\\argmin}{argmin}$
+$\\DeclareMathOperator*{\\argmax}{argmax}$
+$\\DeclareMathOperator*{\\diag}{diag}$
+$\\newcommand{\\var}{\\mathrm{Var}}$
+$\\newcommand{\\xs}{x^*}$
+$\\newcommand{\\xsj}{x_j^*}$
+$\\newcommand{\\xsij}{x_j^{*(i)}}$
+$\\newcommand{\\inroot}{\\in\\text{ROOT}}$
+$\\newcommand{\\Khj}[1]{K_{h_j}(x_j^{(#1)} - x_j^*)}$
+$\\newcommand{\\KV}[1]{K_V(x^{(#1)}-x^*)}$
+$\\newcommand{\\idxi}{^{(i)}}$
+$\\newcommand{\\Nmin}{N_\\text{min}}$
+$\\newcommand{\\mtry}{m_\\text{try}}$
+$\\newcommand{\\indicator}{\\mathds{1}}$
+$\\renewcommand{\\P}{\\mathbb{P}}$
+
+'`
+
+
+<button type="button" class="btn" title="Print to PDF" onClick="window.print()">Export to PDF</button>
+
+# Abstract
+Random Forests (RF) [@breiman:2001] are very popular machine learning methods. They perform well even with little or no tuning, and have some theoretical guarantees, especially for sparse problems [@biau:2012;@scornet:etal:2015]. These learning strategies have been used in several contexts, also outside the field of classification and regression. To perform Bayesian model selection in the case of intractable likelihoods, the ABC Random Forests (ABC-RF) strategy of @pudlo:etal:2016 consists in applying Random Forests on training sets composed of simulations coming from the Bayesian generative models. The ABC-RF technique is based on an underlying RF for which the training and prediction phases are separated. The training phase does not take into account the data to be predicted. This seems to be suboptimal as in the ABC framework only one observation is of interest for the prediction. In this paper, we study tree-based methods that are built to predict a specific instance in a classification setting. This type of methods falls within the scope of local (lazy/instance-based/case specific) classification learning. We review some existing strategies and propose two new ones. The first consists in modifying the tree splitting rule by using kernels, the second in using a first RF to compute some local variable importance that is used to train a second, more local, RF. Unfortunately, these approaches, although interesting, do not provide conclusive results.
+
+# Introduction
+
+The machine learning field of local/lazy/instance-based/case-specific learning [@aha:etal:1991] aims at taking into account a particular instance $\xs$ to produce a prediction thanks to its similarity to the training data set.
+It is opposed to eager learning, where the prediction is divided in two parts: a training phase where a global model is fitted and then a prediction phase. The local approach, in contrast, fits a model taking into account the information provided by $\xs$.
+
+Two closely related learning fields need to be mentioned: semi-supervised learning [@chapelle:etal:2010] and transductive learning [@gammerman:etal:1998]. Semi-supervised learning introduces unlabeled data (whose response is unknown) in addition to labeled ones to build a general model within the training phase. Then, in the testing phase this model is used to predict the response value of a new unlabeled data (different from the first ones). Transductive learning takes profit of a set of labeled and unlabelled data to avoid the construction of a general model and directly predicts the response values of those same unlabeled data. To our knowledge, semi-supervised and transductive learning require a high number of test/unlabeled instances. In our case only one is provided, making those approaches unsuitable. 
+
+The main drawback of local learning approaches is their high computational cost, because for each new test data a model has to be constructed. However, it can be very useful in domains where only one test instance is provided.
+
+Approximate Bayesian computation (ABC, @tavare:etal:1997; @pritchard:etal:1999) is a statistical method developed for frameworks where the likelihood is intractable. It relies on simulations according to Bayesian hierarchical models to generate pseudo-data. These artificial data are then compared to the test/observed one. To this effect    , the most basic algorithm is based on nearest neighbors (NN). Recently, @breiman:2001's machine learning algorithm of random forests (RF) proved to bring a meaningful improvement to the ABC paradigm in both a context of model choice [@pudlo:etal:2016] and parameter inference [@raynal:etal:2019]. 
+Here, we focus on the model choice problem and thus the classification setting.
+Unlike some ABC techniques that take advantage of local methods, such as local adjustment [@beaumont:etal:2002; @blum:francois:2010; @blum:etal:2013], ABC-RF trains an eager RF to predict, later on, the observed data.
+It seems sub-optimal because in the ABC framework only the observed data is of interest for prediction.
+The ABC-RF strategy might therefore greatly benefit from local versions of RF.
+
+Here, we focus on reviewing and proposing tree-based method to predict at best a specific data of interest.
+We start with some reminders on @breiman:2001's RF algorithm. We then study local tree-based approaches depending 
+on the way the localization process is performed. In Section \@ref(sec:localSplittingRules), we  introduce internal modifications 
+of the RF concerning the splitting rule. Then, we take an interest on modifying the random aspects of RF to turn them into local ones. 
+We focus on modifying the sampling of individuals in Section \@ref(sec:localWeightingOfIndividuls), and the sampling of predictors in Section \@ref(sec:weightingCovariates). Local weighting of votes is finally presented in Section \@ref(sec:treeWeights).
+We empirically compare these strategies with the original, eager one in four examples where a local approach might be of interest.
+
+# Reminders on Breiman's random forest {#sec:recallsRF}
+
+
+In the following we consider a classification problem.
+We use a set of $d$ explanatory variables $X=(X_1, \ldots, X_d)$ to predict 
+the categorical/discrete response $Y$ belonging to $\{1,\dots,K\}$.. 
+
+The training data set is composed of $N$ realizations 
+$\big\{ (y\idxi, x\idxi) \big\}_{i=1,\ldots,N}$.
+We consider @breiman:2001's random forest as the reference method to improve.
+
+An RF is a set of randomized trees [@breiman:etal:1984], each one partitioning the covariates space thanks to a series of allocation rules and assigning a class label as prediction to each partition.
+A binary tree is composed of internal and terminal nodes (a.k.a. leaves).
+For each internal node, a splitting rule on an explanatory variable is determined by maximizing an information gain, dividing the training set in two parts. This process is recursively iterated until a stopping rule is achieved. The internal node encountering a stopping rule becomes terminal.
+For continuous covariates, a splitting rule compares a covariate $X_j$ to a bound $s$, allocating to the left branch the data verifying the rule $X_j \leq s$, and to the right all others.
+For categorical covariates, the splitting rule is chosen among all the possible two-way splits of the covariate categories.
+
+The covariate index $j$ and the bound $s$ are chosen to maximize the decrease of impurity between the mother, denoted $t$, and the two resulting left and right daughter nodes, denoted $t_L$ and $t_R$, (weighted by the number of data at each node). This gain associated to a covariate $j$ and split value $s$ is always non negative and is written as
+\begin{equation}
+    G(j,s) = I(t) - \left( \frac{\#t_L}{\#t} I(t_L) + \frac{\#t_R}{\#t} I(t_R) \right), 
+    (\#eq:critRF)
+\end{equation}
+where $\#$ refers to the number of data in the associated node, and $I(\cdot)$ is the impurity.
+The impurity, i.e. the heterogeneity at a given node, is measured with either the Gini index or the entropy. 
+The Gini index, defined for categorical variables as $\sum_{k=1}^K p_k(1-p_k)$, is less computationally intensive as is counterpart, the entropy, defined as  $\sum_{k=1}^K p_k\log(p_k)$ which gives slightly better results. In both cases, the objective is to select the allocation rule that reduces the impurity the most, in other terms that produces the highest gain.
+
+Splitting events stop when one of the three following situation is reached:
+
+- all individuals of the data set at a given node have the same response value (the node is pure),
+- all individuals have the same covariate values,
+- a node has less than $N_{\text{min}}$ instances, $N_{\text{min}}$ being an user-defined integer value, typically set to 1 for classification.
+
+
+Once the tree construction is complete, each leaf predicts a model index, corresponding to the majority class of its instances.
+For a new set of explanatory variables $\xs$, predicting its model index implies passing $\xs$ through the tree, following the path of binary rules, and the predicted value is the value associated to the leaf where it falls.
+
+The RF method consists in bootstrap aggregating (bagging, @breiman:1996) randomized (classification) trees. A large number of trees is trained on bootstrap samples of the training data set and $\mtry$ covariates are randomly selected at each internal node, on which the splitting rule will be defined. $\mtry$ is usually set at $\lfloor \sqrt{d} \rfloor$, where $\lfloor \cdot \rfloor$ denotes the floor function.
+The predicted value for a data $\xs$ is the majority vote across all tree predictions.
+RF methods have some theoretical guarantees for sparse problems [@biau:2012;@scornet:etal:2015].
+Moreover, it is well-known that their performances are quite good even when no tuning is made.
+
+# Local splitting rules  {#sec:localSplittingRules}
+
+
+We now turn to discuss local tree methods. A first option to localize the tree construction is to change the information gain to the benefit of a local one. 
+The idea is to use the test instance $\xs$ to drive the splits and thus the tree construction.
+
+Indeed, because the best split is selected on average, an eager tree may lead to many irrelevant splits to predict $\xs$, potentially discarding data
+relevant for the considered example at early stages of the tree. This behavior results from data fragmentation [@fulton:etal:1996], i.e. from the recursive partitioning of the explanatory variables space to achieve good global performances. In the following we mention this phenomenon as the fragmentation problem.
+A very simple 2-class classification problem presented in Figure \@ref(fig:4Unif) illustrates this issue. The distribution of the training data set will induce, when possible, an initial cut for the tree construction in $X_1\approx0.5$, however,
+the unlabeled instance (represented by a black star) is in a region where a lot of relevant instances will be discarded after this first data split. A more pertinent first cut should occur in $X_2\approx0.25$. This problem, called fragmentation problem, also leads to less significant splitting rules at deeper levels of the tree construction since based on fewer instances.
+It is thus interesting to consider a local approach taking $\xs$ into account.
+
+
+```{r 4Unif, out.width="50%", fig.cap="An illustrative classification problem with 2 classes (purple and sky blye), containing two covariates describing four distinguishable regions (delimited by orange dashed lines) and an unlabeled data to classify (black star). This case will give rise to a fragmentation problem.", fig.align='center'}
+safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
+                             "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+set.seed(2)
+
+n1 <- 1000; n2 <- 1000; n3 <- 300; n4 <- 300 
+
+prob_classe1_z1 <- 0.25
+prob_classe2_z1 <- 0.75
+
+prob_classe1_z2 <- 0.75
+prob_classe2_z2 <- 0.25
+
+prob_classe1_z3 <- 0.2
+prob_classe2_z3 <- 0.80
+
+prob_classe1_z4 <- 0.80
+prob_classe2_z4 <- 0.2
+
+
+# Zone 1, limit X1 : 0 - 0.5, limit X2 : 0.5 - 1
+
+b_inf_X1_z1 <- 0
+b_sup_X1_z1 <- 0.5
+b_inf_X2_z1 <- 0.5
+b_sup_X2_z1 <- 1
+
+Y.train.z1 <- c(rep(0, n1*prob_classe1_z1), rep(1,n1*prob_classe2_z1))
+X.train.z1 <- cbind(runif(n1, b_inf_X1_z1, b_sup_X1_z1) ,  runif(n1, b_inf_X2_z1, b_sup_X2_z1) )
+colnames(X.train.z1) <- c("X1", "X2")
+
+
+# Zone 2, limit X1 : 0.5 - 1, limit X2 : 0.5 - 1
+
+b_inf_X1_z2 <- 0.5
+b_sup_X1_z2 <- 1
+b_inf_X2_z2 <- 0.5
+b_sup_X2_z2 <- 1
+
+Y.train.z2 <- c(rep(0, n2*prob_classe1_z2), rep(1,n2*prob_classe2_z2))
+X.train.z2 <- cbind(runif(n2, b_inf_X1_z2, b_sup_X1_z2) ,  runif(n2, b_inf_X2_z2, b_sup_X2_z2) )
+colnames(X.train.z2) <- c("X1", "X2")
+
+
+# Zone 3, limit X1 : 0 - 1, limit X2 : 0.25 - 0.5
+
+b_inf_X1_z3 <- 0
+b_sup_X1_z3 <- 1
+b_inf_X2_z3 <- 0.25
+b_sup_X2_z3 <- 0.5
+
+Y.train.z3 <- c(rep(0, n3*prob_classe1_z3), rep(1, n3*prob_classe2_z3))
+X.train.z3 <- cbind(runif(n3, b_inf_X1_z3, b_sup_X1_z3) ,  runif(n3, b_inf_X2_z3, b_sup_X2_z3) )
+colnames(X.train.z3) <- c("X1", "X2")
+
+
+# Zone 4, limit X1 : 0 - 1, limit X2 : 0 - 0.25
+
+b_inf_X1_z4 <- 0
+b_sup_X1_z4 <- 1
+b_inf_X2_z4 <- 0
+b_sup_X2_z4 <- 0.25
+
+Y.train.z4 <- c(rep(0, n4*prob_classe1_z4), rep(1, n4*prob_classe2_z4))
+X.train.z4 <- cbind(runif(n4, b_inf_X1_z4, b_sup_X1_z4) ,  runif(n4, b_inf_X2_z4, b_sup_X2_z4) )
+colnames(X.train.z4) <- c("X1", "X2")
+
+
+# Concatenate
+
+Y.train <- c(Y.train.z1, Y.train.z2, Y.train.z3, Y.train.z4)
+X.train <- rbind(X.train.z1, X.train.z2, X.train.z3, X.train.z4)
+
+
+#######
+# Graph generation
+
+par(mar=c(5.1,4.1,2.1,2.1))
+plot(X.train, col=safe_colorblind_palette[Y.train+1], xlim=c(0,1), ylim=c(0,1), pch=16, xlab="X1", ylab="X2")
+segments(x0=0.5, y0=0.5, x1=0.5, y1=2, col="orange", lw=2, lty=2)
+abline(h=0.5, lty=2, col="orange", lw=2)
+abline(h=0.25, lty=2, col="orange", lw=2)
+points(0.47, 0.13, pch="*", cex=3)
+```
+
+It is interesting to note that building a local tree by modifying its internal construction results 
+in building a single trajectory only, since the splitting rules are only applied on branches containing $\xs$. A local tree is therefore a tool to recursively remove non-relevant data points from the classifier rule.
+ Thus, a local random forest might be much faster for its construction compared to the eager version, especially if only one instance is of interest.
+
+In this section we present the approach of @friedman:etal:1997 to build local decision trees,
+called lazy decision trees, and expand it for RF. We also present our attempts at using unidimensional 
+or multidimensional kernels to give more weight to training samples closer to $\xs$.
+
+## Lazy decision trees {#subsec:lazyDT}
+
+
+The lazy decision tree algorithm (LazyDT) is introduced in @friedman:etal:1997.
+Its objective is to take into account $\xs$ during the tree construction.
+To do so, the information gain -- depending on $j$ and $s$ -- to maximize at each node is modified compared to criterion \@ref(eq:critRF).
+Only the difference of impurity between the mother node $t$ and the daughter node where $\xs$ ends, denoted $t^*$, is considered.
+The resulting local information gain is defined by
+\begin{equation}
+    G_w(j,s) = I_w(t) - I_w(t^*),
+    (\#eq:critLazyDT)
+\end{equation}
+where $I_w$ is the information gain computed with data at the node, weighted by a weight vector $w=(w^{(1)}, \ldots, w^{(N)})$ (described below). Note the absence of the proportion of individuals $\#t_L/\#t$ or $\#t_R/\#t$ compared to gain \@ref(eq:critRF).
+
+To ensure that this gain is always non-negative, to each instance $(y\idxi, x\idxi)$ is assigned a weight $w\idxi=\frac{1}{n_k K}$ when $y\idxi = k$ and where $n_k$ is the number of data labeled $k$ at the mother node. Indeed, this weight ensures that all the weighted class frequencies are equal at the mother node, hence the weighted mother node impurity $I_w(t)$ is maximal and the resulting gain always non-negative.
+The value of $I_w(t)$ is equal to $\frac{K-1}{K}$ for the Gini index, and to $\log(K)$ for the entropy. Due to this constant value, the maximization of \@ref(eq:critLazyDT) is equivalent to the minimization of $I_w(t^*)$. Note that the weights used at $t^*$ and $t$ are the same (limited to the sub-sample induced by the potential cut depending on $j$ and $s$ for $t^*$), but are recomputed after each accepted tree partition.
+
+Moreover, those weights also avoid the problem that the impurity measures only use the classes proportions, without distinction of their associated class labels.
+Indeed, let us take the example of a two-class classification problem (1 and 2), where the mother node contains $80\%$ of data labeled 1 and $20\%$ labeled 2. A splitting rule computed on unweighted data might induce, at the daughter node where $\xs$ falls, $20\%$ and $80\%$ as proportions of 1 and 2, respectively.
+In this way, the non-weighted gain \@ref(eq:critLazyDT) would be zero, even though the discriminatory power of this cut is clearly non-null.
+
+LazyDT provides three other major features: the use of discretised explanatory variables, the use of options and a condition on allowed split events.
+
+- This algorithm only handles discretised explanatory variables. A preliminary discretisation is thus necessary, using for example the minimum description length principle [@fayyad:irani:1995]. This was initially introduced to enhance the algorithm speed. 
+    According to our experiments this might also be useful when continuous noise variables are considered as features as splitting along them may result in early strop of the algorithm. For instance in figure \@ref(fig:early) below, $\xs_1$ is  localized at a border of x1 values, together with two datapoints with same label. The next splitting rule will isolate them with $\xs_1$ because the resulting node will be pure and hence provide the maximum gain. $\xs$ would thus be classified as sky-blue,  even though a cut along x2 would have resulted in a purple prediction using many more datapoints. The discretisation will be an asset in such situations since pure noise variables are more likely to be discretised into a unique or few categories containing large amount of data.
+- The use of *options* is introduced. Indeed, because features can induce very similar information gains, @friedman:etal:1997 advise to develop all the paths -- induced by splitting rules -- achieving at least $90\%$ of the maximal possible gain. The prediction associated to a tree for $\xs$ becomes the prediction of the leaf with the maximal number of individuals in its majority class. We tried values different from $90\%$ and it did not provide better results.
+    Moreover, we studied an alternative to this method of prediction: because each option provides a prediction for $\xs$, we considered taking as final prediction the majority vote of these option predictions, but again
+    results were not more conclusive.
+- Finally, LazyDT only considers split values that are not equal to the values of $\xs$ as potential cuts.
+
+```{r early, out.width="40%", fig.cap="An illustrative classification problem with 2 classes (purple and sky blye), containing an informative covariate (x2) and a non-informative covariate (x1) and an unlabeled data to classify (black star). Splitting along x1 will result in a pure leaf with sky-blue label.", fig.align='center'}
+safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
+                             "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
+set.seed(2)
+
+n1 <- 100; n2 <- 100; 
+
+x1=runif(n1-2,0,0.95)
+x2=runif(n2,0,0.95)
+y1=runif(n1-2,0.5,1)
+y2=runif(n2,0,0.5)
+x1p=c(0.97,0.99)
+y1p=c(0.8,0.6)
+
+Y.train <- c(rep(0, n1), rep(1,n2))
+X.train <- rbind(cbind(x1,y1),cbind(x1p,y1p),cbind(x2,y2))
+colnames(X.train) <- c("X1", "X2")
+
+
+#######
+# Graph generation
+
+par(mar=c(5.1,4.1,2.1,2.1))
+plot(X.train, col=safe_colorblind_palette[Y.train+1], xlim=c(0,1), ylim=c(0,1), pch=16, xlab="X1", ylab="X2")
+abline(v=0.955, lty=2, col="orange", lw=2)
+points(0.98, 0.13, pch="*", cex=3)
+```
+
+The LazyDT algorithm has undergone some developments. First, a bagged version to deduce class probabilities is presented in @margineantu:dietterich:2003. A boosted version is then introduced in @fern:etal:2003. @friedman:etal:1997 mention as main drawback for this method its inability to allow pruning. @fern:etal:2003 propose a heuristic to overcome this drawback, but their algorithm is not guaranteed to improve the classifier accuracy.
+Considering trees-ensemble overcomes this weakness.
+
+## Unidimensional (per covariate) kernel approach {#subsec:localKernel}
+
+Most local methods are based on weights depending on the proximity to $\xs$. This is the case of locally weighted regression
+[@cleveland:1979;@cleveland:devlin:1988; @fan:1993; @hastie:loader:1993]. There are different ways to use weights 
+in the context of tree methods. One can think of taking into account these weights to define the training sets on which 
+trees are built. Such type of strategy is described in Section \@ref(sec:localWeightingOfIndividuls).
+In this section, we examine the possibility of using weights during tree construction, inside the tree splitting criterion.
+
+In the wake of locally weighted regression, we set a weight to each training individual and per covariate $j$ depending on its proximity to $\xsj$ in the covariate $j$ space. We consider a Gaussian kernel centered in $\xsj$, 
+providing weights 
+$$
+    \Khj{i}, \;\; \text{for} \;\; i\in\{1,\ldots,N\}.
+$$
+We focus on a Gaussian kernel due to its smoothness and to avoid giving exactly zero weights to some individuals, so that $\Khj{i}=1/\sqrt{2\pi} h_j \exp\left(-\frac{(x_j^{(i)} - \xsj)^2}{2h_j^2}\right)$.
+
+The choice of the bandwidth $h_j$ is tricky. We consider as bandwidth value $h_j$ the quantile of 
+order $\alpha$ of the distribution of distances to $\xs$: $\mathbb{Q}_\alpha \left\{ \mid x_j^{(i)} - \xsj \mid_{i=1, \ldots, N} \right\}$ (ie $h_j=d^j_{(\alpha N)}$ where $d^j_{(1)},\dots ,d^j_{(N)}$ are the ordered distances $\mid x_j^{(i)} - \xsj \mid$ of the training data points to $\xs$ in the covariate $j$ space).
+The parameter $\alpha$ determines the shape of the kernel. For low $\alpha$ values, a higher weight is given to data close to $\xs$, and vice-versa. In our numerical experiments, we clearly observed that low
+values of $\alpha$ again result in cuts too close to $\xsj$. We set $\alpha=1$, i.e. $h_j$ is the maximum of the absolute values considered.
+Moreover, the bandwidth can eventually be recalculated at each internal node or kept constant during the tree construction.
+We observed very few differences when using a fixed or a varying
+bandwidth and $h_j$ is set as constant in the following.
+
+For a given class label $k$, at the mother node $t$, this approach transforms the usual class frequencies 
+(giving uniform weights among data) into some weighted class frequencies in the following way:
+$$
+    p_k  = \frac{\sum_{i:x^{(i)}\in t} \mathbf{1}\{ y^{(i)}=k \}}{\#t} \quad
+    \Rightarrow \quad  \;\;\; \widetilde{p}_{k,j} = \frac{\sum_{i:x\idxi\in t} \mathbf{1}\{ y\idxi=k \} \Khj{i}}{\sum_{\ell:x^{(\ell)}\in t} \Khj{\ell}},
+$$
+where $\mathbf{1}\{\cdot\}$ is the indicator function.
+Moreover, the proportion of individuals, for example, at the left daughter node $t_L$ implied by a cut $X_j \leq s$ is transformed from
+\begin{equation} 
+    \frac{\#t_L}{\#t} = \frac{\sum_{i:x\idxi\in t} \mathbf{1}\{ x_j^{(i)} \leq s \}}{\#t}
+\quad \text{into} \quad
+      \frac{\widetilde{\#t_L}}{\widetilde{\#t}} = \frac{\sum_{i:x\idxi\in t} \mathbf{1}\{ x_j^{(i)} \leq s \} \Khj{i}}{\sum_{\ell:x^{(\ell)}\in t} \Khj{\ell}}.
+    (\#eq:kernelProp)
+\end{equation} 
+The information gain to maximize (based on the Gini index) thus becomes
+
+\begin{equation}
+   \sum_{k=1}^K  \widetilde{p}_{k,j} (1-\widetilde{p}_{k,j}) 
+- \Big(\frac{\widetilde{\#t_L}}{\widetilde{\#t}}  
+  \sum_{k=1}^K \widetilde{p}_{k,j}^L (1-\widetilde{p}_{k,j}^L)  
+   +\frac{\widetilde{\#t_R}}{\widetilde{\#t}}
+    \sum_{k=1}^K \widetilde{p}_{k,j}^R (1-\widetilde{p}_{k,j}^R) 
+\Big)
+   (\#eq:critlocalKernel)
+\end{equation}
+where $\widetilde{p}_{k,j}^L$ and $\widetilde{p}_{k,j}^R$ are the weighted proportions 
+of class $k$ at the left and right daughter nodes, respectively.
+
+\begin{equation}
+\let\scriptstyle\textstyle\substack{\widetilde{I_j}(t)}=\sum_{k=1}^K  \widetilde{p}_{k,j} (1-\widetilde{p}_{k,j})
+\end{equation}
+
+\begin{equation}
+\let\scriptstyle\textstyle\substack{\widetilde{I_j}(t_L)}=\sum_{k=1}^K \widetilde{p}_{k,j}^L (1-\widetilde{p}_{k,j}^L)
+\end{equation}
+
+\begin{equation}
+\let\scriptstyle\textstyle\substack{\widetilde{I_j}(t_R)}=\sum_{k=1}^K \widetilde{p}_{k,j}^R (1-\widetilde{p}_{k,j}^R)
+\end{equation}
+
+The first term $\widetilde{I_j}(t)$ is important and cannot be omitted contrary 
+to the eager version, because it depends on the covariate index. 
+
+We use this local Gini index during the tree construction and 
+do not modify the default values for the RF parameters $\mtry$ and $\Nmin$.
+For each tree, the associated prediction is the usual majority vote at the leaf.
+
+Our local splitting rule is similar to the one used in the recent method of @armano:tamponi:2018. 
+In their work, an improvement to RF is introduced by using an ensemble of local trees. 
+Each tree is trained giving more weight to training data around a centroid,
+which is sampled among the training instances, 
+and different centroids are considered to map the whole predictor space. 
+Although using a local Gini index, this approach is more of an eager one than a local one.
+Indeed, no test instance is involved during the forest construction.
+Moreover, a multidimensional kernel per tree is used.
+
+## Multidimensional kernel approach {#subsec:localKernelMultiDim}
+
+
+In the spirit of @armano:tamponi:2018, it is natural to extend the approach introduced 
+in Section \@ref(subsec:localKernel) with a multidimensional kernel centered in $\xs$.
+We assign to each data $(y\idxi,x\idxi)$ a weight
+$$
+    \KV{i} = \exp{ \left( -\frac{1}{2}(x\idxi - \xs)^\top V^{-2} (x\idxi - \xs) \right)},
+$$
+where $V$ is a scaling matrix of the Gaussian kernel.
+Similarly to Section \@ref(subsec:localKernel) we consider for $V$ the diagonal matrix made of the $\alpha$ quantiles, i.e.
+$$
+V= \diag\left(\mathbb{Q}_\alpha \left\{ \mid x_1\idxi - x_1^* \mid_{i=1, \ldots, N} \right\}, \ldots, \mathbb{Q}_\alpha \left\{ \mid x_d\idxi - x_d^*\mid_{i=1, \ldots, N} \right\} \right).
+$$
+As for the unidimensional kernel approach, using extensive numerical experiments, we observed that low values of $\alpha$ result in cuts too close to $\xsj$ and we set $\alpha=1$. Also, the weights are fixed
+during the tree construction. 
+
+The weighted frequency for a given class label $k$ becomes
+$$
+    \widetilde{p}_k = \frac{\sum_{i=1}^N  \mathbf{1}\{ y\idxi=k \} \KV{i}}{\sum_{\ell=1}^N \KV{\ell} }.
+$$
+The weighted proportions of individual at the daughter nodes are transformed in a similar manner to \@ref(eq:kernelProp), resulting in a gain criterion analogous to \@ref(eq:critlocalKernel).
+
+The major benefit of such weights is that they do not depend on the covariate index, thus the usual tree prediction, 
+i.e. the majority class at the leaf where $\xs$ falls, can be replaced by a more coherent strategy with the tree 
+construction, using as prediction the class with the maximal weighted class proportion at the leaf.
+Thus, the prediction for $\xs$ provided by the $b$-th tree is
+$$
+    \hat{y}_b^* = \argmax_{1\leq k \leq K} \widetilde{p}_k.
+$$
+The forest prediction for $\xs$ is the usual majority vote of the tree predictions.
+
+# Local weighting of individuals {#sec:localWeightingOfIndividuls}
+
+To avoid the fragmentation problem, instead of modifying the way the predictor space is partitioned, one can consider directly targeting the region of interest, i.e. samples similar to $\xs$. In this part, we focus on strategies acting on the individuals sampling schemes involved at the first step of a tree construction, replacing the usual bootstrap sampling with a local one.
+
+## Weighted bootstrap {#subsec:weightingIndividuals}
+
+@xu:etal:2016 propose to perform weighted bootstrap sampling, where a measure of proximity between $\xs$ and the training data is used to compute the weights. This algorithm is entitled Case-Specific Random Forest (CSRF, Algorithm 1).
+
+An individual closer to $\xs$ will have higher weight and will more likely be picked in the bootstrap sampling.
+However, such weights depend heavily on the choice of the proximity measure, especially in a high dimensional setting and with many irrelevant explanatory variables. This is why in this framework the proximity measure will be automatically computed thanks to a bagged tree-ensemble (i.e. with $\mtry=d$).
+
+Indeed, for a given tree, $\xs$ ends in a leaf with some training data. For each $x\idxi$, counting the number of trees where $\xs$ and $x\idxi$ end in the same leaf allows to compute the contribution of $x\idxi$ to predict $\xs$, denoted $\omega\idxi$ in Algorithm 1.
+The deduced weights are then used to perform weighted bootstrap sampling during the training of a new RF. This process can be seen as a nearest neighbors strategy: per tree, a leaf provides a certain amount of neighbors to $\xs$, those are then accumulated over all the trees to deduce instance weights.
+
+This algorithm highly depends on the depth of the first RF trees, hence a pivotal parameter for this strategy is $N_{\text{min}}$, the minimal number of observations at an internal node.
+The higher $N_{\text{min}}$, the shallower the trees will be. Hence, low values of $N_{\text{min}}$ result in putting more weight on the closest individuals to $\xs$, and vice-versa. We tried various values of $\Nmin$ in our experiments, and find that optimal performance require $Nmin$ not to be too small.
+
+******
+**Algorithm 1**:  CSRF -- local weighting of individuals
+
+******
+  Step 1.  Grow $B_1$ bootstrapped trees with $\mtry=d$ and a given $\Nmin$ value 
+
+  Step 2.  For each training data $(y\idxi, x\idxi)$, count $c\idxi$ the number of times $x\idxi$ and $\xs$ end in the same leaf
+
+  Step 3.  Compute the resampling probability of the training individual $i$ relative to $\xs$ as $\omega\idxi=\frac{c\idxi}{\sum_{\ell=1}^N c^{(\ell)}}$, for $i \in \left\{ 1, \ldots, N \right\}$
+
+  Step 4. Train a usual RF of size $B_2$ with bootstrap resampling probabilities 
+   $\omega^{(1)}, \ldots, \omega^{(N)}$ and deduce the prediction for $\xs$
+   
+******
+
+
+## Nearest neighbours: 0/1 weights {#subsec:nearest-neighbours}
+
+A more intuitive idea is based on the deduction of $\kappa$ nearest neighbors (NN) to $\xs$, which are then used to train an RF.
+@fulton:etal:1996 propose several methods to extract data local to $\xs$ -- the best one being based on NN -- in order to build decision trees on this restricted training set.
+@galvan:etal:2009 also mention the possibility of pre-selecting closest observations to $\xs$ (possibly with replicates) at first and applying any machine learning algorithm on these data set.
+This kind of strategy is more recently applied in a text classification framework by @salles:etal:2018, and shows good improvements in terms of classification errors compared to RF (and other ones).
+
+Those approaches are closely related to CSRF (Section \@ref(subsec:weightingIndividuals)) since considering NN during a preliminary step is equivalent to giving 0/1 sampling weights (with or without replacement).
+
+In Section \@ref(sec:examples), we compare the use of a preliminary selection of nearest neighbors to $\xs$ followed by a usual RF training, this strategy is denoted in the remaining by NN-RF, for nearest neighbors - random forest. The main issue of such approaches (and local ones in general) is the difficulty to choose this neighborhood.
+
+# Local weighting of covariates {#sec:weightingCovariates}
+
+Instead of acting on the bootstrap resampling of RF, we propose to operate on the covariates subsampling which occurs at each internal node. In the wake of Section \@ref(subsec:weightingIndividuals) we propose to weight covariates during the RF trees construction depending on their importance to predict $\xs$. In the following we mention it as LVI-RF (for local variable importance - random forest).
+
+We study the influence of considering sampling probability weights on explanatory variables.
+The principle is detailed in Algorithm 2 and is very similar to Algorithm 1.
+
+We take profit of a first RF construction with default parameters to deduce covariate importance to predict $\xs$: in a very intuitive way we pass $\xs$ through each tree of the RF, and count the number of times each covariate is involved in a splitting rule to allocate $\xs$.
+We can then easily deduce some predictor weights, and we propose to introduce them into the usual RF covariate sampling, so that a covariate with high weight is more likely to be drawn in the $\mtry$-sample.
+
+Our thought is that using such weights might improve the prediction accuracy of the RF, especially in a sparse framework, by avoiding useless data fragmentation according to irrelevant predictors and potential loss of useful training data for the prediction of $\xs$.
+Moreover, a different set of explanatory variables might be useful to predict different test instances, thus thanks to a local measure of variable importance we also try to ensure that interesting covariates are more likely to be sampled during the tree construction.
+Finally, in the case of a huge number of noise covariates, even though RF can handle a large number of features, useful ones are very unlikely to be drawn during the tree construction, deteriorating the algorithm performance.
+In counterpart, weighted covariate sampling might increase the prediction correlation between the RF trees and alter the performance of the global tree ensemble. 
+
+
+******
+**Algorithm 2**:  Local weighting of covariates
+
+******
+  Step 1.  Grow $B_1$ randomized trees with $\mtry=\lfloor \sqrt{d} \rfloor$ and $\Nmin=1$ 
+
+  Step 2. For each covariate $j \in \left\{ 1, \ldots, d \right\}$, count $v_j$ the number of times
+   $X_j$ has been used during the paths followed by $\xs$
+
+  Step 3.  Compute the resampling probability of the covariate $j$ relative to $\xs$ as
+    $p_j=\frac{v_j}{\sum_{\ell=1}^d v_\ell}$, for $j \in \left\{ 1, \ldots, d \right\}$
+
+  Step 4. Train a usual RF of size $B_2$ with covariate resampling probabilities 
+   $p_1, \ldots, p_d$ at each internal node and deduce the prediction for $\xs$
+   
+******
+
+Some approaches dealing with covariate weighting have been studied in a non-local framework. @amaratunga:etal:2008 propose the enriched random forests in an extremely noisy feature space, where covariate sampling is modified using global weights. @maudes:etal:2012, with their random feature weights approach,
+investigate the use of non-uniform sampling of covariates, changing for each tree.
+
+# Local weighting of votes {#sec:treeWeights}
+
+The final prediction of a classical RF is the majority vote of all trees, hence they all have equal weight.
+However a given tree might provide very good predictions on some test instances, but perform very poorly on others.
+This is why a strategy for building local random forests is based on weighting tree predictions depending on their ability to correctly predict instances similar to $\xs$. Majority vote is hence replaced with locally weighted vote.
+
+In the instance-based framework, @robnik:2004; @tsymbal:etal:2006 and then @zhang:etal:2013 investigate this idea. Given a test instance $\xs$, $\kappa$ neighbors are selected based on the proximity measure introduced in @breiman:2001, (i.e. the average number of times two data end in the same leaf) to compute a per-tree error score. These scores are further used to select and weight trees and to provide a final weighted-vote prediction.
+
+## Dynamic voting and selection {#subsec:dynamicVoting}
+
+This section describes the methodology of @tsymbal:etal:2006, called Dynamic Voting with Selection Random Forest (DVSRF). 
+A first RF is trained thanks to which $\kappa$ nearest neighbors to $\xs$ are selected.
+The quality of the $b$-th tree toward $\xs$ is then evaluated as the average margins of the out-of-bag $\kappa$ instances, weighted by proximities, i.e.   
+\begin{equation}
+    w_b(\xs) = \frac{ \sum_{i=1}^\kappa \mathbf{1}\{x\idxi \in \text{OOB}_b\} \, \sigma(\xs, x\idxi) \, \text{mr}_b(x\idxi) }{\sum_{\ell=1}^\kappa \mathbf{1}\{x^{(\ell)} \in \text{OOB}_b\} \, \sigma(\xs, x^{(\ell)}) } \, , (\#eq:weightsTree)
+\end{equation}
+where $\text{OOB}_b$ is the set of out-of-bag data for the $b$-th tree, $\sigma(\xs, x\idxi)$ is the proximity measure provided by the RF, to the power of $3$, and the margin function $\text{mr}_b(x\idxi)$ is equal to $1$ if the $b$-th tree predicts $y\idxi$ correctly, $-1$ otherwise.
+Weights \@ref(eq:weightsTree) are then normalized to be positive and to sum to one.
+Finally, the prediction for $\xs$ is computed using the majority class of the weighted tree vote proportions
+\begin{equation}
+    \hat{y}^* = \argmax_{1\leq k \leq K} p_{\text{DVS},k} \;\;\;\;\;\; (\#eq:predDVSRF)
+\end{equation}
+    
+$$
+\text{where} \;\;\;\;\;\; p_{\text{DVS},k} = \frac{\sum_{b=1}^B  \mathbf{1}\{ \hat{y}^*_b=k \} w_b(\xs)}{\sum_{\ell=1}^B w_\ell(\xs)}
+$$
+and $\hat{y}^*_b$ denotes the original prediction of the $b$-th tree for $\xs$. \\
+A predefined number of trees denoted $B_\text{sel}$ (usually half of $B$), carrying the highest weights, can be selected and used for the final prediction, modifying weighted predictions \@ref(eq:predDVSRF) accordingly.
+
+
+## Kernel weighted voting {#subsec:kernelVoting}
+
+In the same spirit, we investigate the use of a multidimensional kernel as similarity measure (presented in Section \@ref(subsec:localKernelMultiDim)) and we replace the margin function by the simpler alternative $\mathbf{1}\{\hat{y}\idxi_b=y\idxi\}$ indicating whether the $b$-th tree prediction for $x\idxi$, denoted $\hat{y}\idxi_b$, is correct or not.
+
+Using the same notations as above, the $b$-th tree weight is hence computed in the following way:
+\begin{equation}
+    w_b(\xs) = \frac{ \sum_{i=1}^N \mathbf{1}\{x\idxi \in \text{OOB}_b\} \, \KV{i} \, \mathbf{1} \{\hat{y}\idxi_b=y\idxi\} }{\sum_{\ell=1}^N \mathbf{1}\{x^{(\ell)} \in \text{OOB}_b\} \, \KV{\ell} }. (\#eq:weightsKernelTree)
+\end{equation}
+All $N$ labeled data are used for the weight computation, their importance being measured by the kernel. $\alpha$ is again set to $1$ and tree selection is not performed.
+In the following this proposal is denoted as KV-RF (for kernel voting - random forest).
+
+
+# Numerical experiments {#sec:examples}
+
+In this section, we compare the previously presented methods -- summarized below -- on two (simulated) Gaussian mixtures examples and a population genetics example.
+
+  - CSRF        -  Case-specific RF              -      Section \@ref(subsec:weightingIndividuals)   
+  - NN-RF       -  Nearest-neighbors RF         -     Section \@ref(subsec:nearest-neighbours)     
+  - LVI-RF      -  Local variable importance RF  -    Section  \@ref(sec:weightingCovariates) 
+  - DVSRF       -  Dynamic voting with selection RF - Section  \@ref(subsec:dynamicVoting) 
+  - KV-RF       -  Kernel voting RF              -    Section  \@ref(subsec:kernelVoting)
+
+
+
+Methods are run ten times on the same test data set. The average and standard deviation of the ten resulting misclassification error rates, per method, are reported as a measure of performance. Note that in order to recover the predictions for the whole test table, each local algorithm is reapplied to each test data.
+The  first two Gaussian examples have the advantage of being simple enough to compute the Bayes classifier which gives the optimal error rate.
+
+The lazy decision random forest approach presented in Section \@ref(subsec:lazyDT) as well as both approaches involving kernels (unidimensional kernels and multidimension kernel presented in Sections \@ref(subsec:localKernel) and \@ref(subsec:localKernelMultiDim)) were implemented and compared on a lower dimensional simulation study (second Gaussian examples with only 500 test data and 4 replications, results presented in Section \@ref(subsection:gaussianExampleUnbalanced)) but were dropped of the final comparison due to high computational cost despite poor results.
+Indeed, localizing trees with identical criterion should be faster, but with modified criterion (information gain or kernel-based Gini criterion),  they require the computation of one weight per training data in the leaf, which can be very burdensome.  This is particularly true since given our first results, we have not optimized our codes to allow faster computations.
+
+The random forests are built using the default parameters, i.e. trees are maximal ($\Nmin=1$), and the covariate sampling parameter is $\mtry=\lfloor \sqrt{d} \rfloor$. Moreover, each forest is made of $100$ trees, meaning CSRF and LVI-RF use a total of $200$ trees. Additional/different tuning parameters are specified in the displayed result tables.
+All the methods involve classic RF, we use the R package *ranger* [@wright:ziegler:2017] for their construction. 
+
+
+## Balanced Gaussian mixture example {#subsection:gaussianExample}
+
+We consider 40-dimensional data from four classes $(1, 2, 3, 4)$. 
+The classes have equal weight: $p_1=p_2=p_3=p_4=1/4$.
+The data are generated from 20-dimensional Gaussian distributions and $20$ noise explanatory variables are added, simulated according to a uniform distribution $\mathcal{U}_{[0;10,000]}$. We consider two training data sets of sizes $3,000$ and $10,000$, both sampled among the 4 classes with equal probabilities. In both cases, $5,000$ simulations are used as testing data set, also sampled equally among the 4 models.
+
+The parameters associated to the $20$-multidimensional Gaussian distribution are
+\begin{align*}
+    \mu_1 &=    \left(0.8, 3, 1, 2.5,   \ldots,1, 2.5   \right)^\top,       &
+    \mu_2 &=    \left(3.2, 3, 2.5, 2.5, \ldots, 2.5, 2.5    \right)^\top,   \\
+    \mu_3 &=    \left(2, 1, 2, 2.3, \ldots, 2, 2.3  \right)^\top,           &
+    \mu_4 &=    \left(2, 0, 2, 1.8, \ldots, 2, 1.8  \right)^\top,           \\
+    \Sigma_1 &= \diag(3, 3, 3, 1, \ldots, 3, 1),        &
+    \Sigma_2 &= \diag(3, 3, 3, 5, \ldots, 3, 5),        \\
+    \Sigma_3 &= \diag(4, 1, 4, 1, \ldots, 4, 1),        &
+    \Sigma_4 &= \diag(2.5, 1, 2.5, 1, \ldots, 2.5, 1).
+\end{align*}
+The first two dimensions are the most relevant for discriminating between the four classes. They are represented in Figure \@ref(fig:gaussEq). Indeed, although the remaining ones can provide information to identify the class labels, they are more overlapping with each others and hence less informative.
+We also consider a higher dimensional setting in which we add $100$ additional noise variables (sampled as uniforms on $[0,1]$) for which we reproduce the same training / test combinations. The results are presented in Table \@ref(tab:gaussEqNoise10) for $10,000$ training data.
+In both scenarios, using only $3,000$ training data increased the error rates of about $2$\% for each method, but did not change the comparison.
+
+```{r gaussEq, out.width="50%", fig.cap="First Gaussian example: two first explanatory variables $X_1$ and $X_2$ ;    colors indicate the class labels (1-sky blue, 2-purple, 3-sand, 4-dark green).", fig.align='center'}
+set.seed(1)
+library(mvtnorm)
+
+# Model probabilities (4 balanced classes)
+pi0 <- 0.25
+pi1 <- 0.25
+pi2 <- 0.25
+pi3 <- 0.25
+
+# Gaussian dimension
+l <- 20
+
+# Gaussian parameters
+mu0 <- c(c(0.8,3), rep(c(1,2.5), l/2-1)) ; Sigma0 <- diag(c(c(3,3), rep(c(3,1),l/2-1)) )
+mu1 <- c(c(3.2,3), rep(c(2.5,2.5), l/2-1)) ; Sigma1 <- diag(c(c(3,3), rep(c(3,5),l/2-1)) )
+mu2 <- c(c(2,1), rep(c(2,2.3),l/2-1)) ; Sigma2 <- diag( (rep(c(4,1),l/2) ) )
+mu3 <- c(c(2,0), rep(c(2,1.8),l/2-1)) ; Sigma3 <- diag( (rep(c(2.5,1),l/2) ) )
+
+# Number of training data
+n <-3000 # only 3000 to keep figure meaningful
+# Sample class label
+classe <- sample(x = c(0,1,2,3), size = n, replace = TRUE, prob = c(pi0,pi1,pi2,pi3))
+classe <- sort(classe)
+
+couleur <- rep(safe_colorblind_palette[1], n)
+couleur[classe==1] <- safe_colorblind_palette[2]
+couleur[classe==2] <- safe_colorblind_palette[3]
+couleur[classe==3] <- safe_colorblind_palette[4]
+
+n0 <- sum(classe==0)
+n1 <- sum(classe==1)
+n2 <- sum(classe==2)
+n3 <- sum(classe==3)
+
+# Sample from the Gaussians
+x.train <- rbind(rmvnorm(n0, mu0, Sigma0),
+                 rmvnorm(n1, mu1, Sigma1),
+                 rmvnorm(n2, mu2, Sigma2),
+                 rmvnorm(n3, mu3, Sigma3))
+
+# Graph generation
+plot(x.train[,1], x.train[,2], col=couleur,xlab="X1",ylab="X2",pch=8,cex=0.8)
+```
+
+
+
+```{r gaussEq10, message=FALSE, warning=FALSE, results="asis"}
+library(xtable)
+resTOT<-read.table("Gaussian-Balanced-No-Noise/Example-Gaussian-Balanced-No-Noise-Res-10000.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""))
+
+TableOrdered=Table[c(1:3,5:10,17:19,4,11:16),]
+colnames(TableOrdered)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered)=NULL
+
+#knitr::kable(TableOrdered,caption= "First Gaussian example: prediction error rate (percentage), with 10000 training data",booktabs=T,label= "gaussEq10",row.names=NA)
+
+
+resTOT<-read.table("Gaussian-Balanced-With-Noise/Example-Gaussian-Balanced-With-Noise-Res-10000.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""))
+
+TableOrdered2=Table[c(1:3,5:10,17:19,4,11:16),]
+colnames(TableOrdered2)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered2)=NULL
+
+
+Table2=cbind(TableOrdered,TableOrdered2[,3:4])
+
+knitr::kable(Table2,caption= "First Gaussian example: prediction error rate (percentage), with 10000 training data. With 20 variables (columns 3 and 4), and with 100 additional noise variables (columns 5 and 6)",booktabs=T,label= "gaussEqNoise10",row.names=NA)
+
+```
+The only method that manages to outbeat a standard random forest is the Nearest-Neighbors RF (about 1\% of error rate), while all other methods have similar or worse results than RF.
+
+## Unbalanced Gaussian mixture example {#subsection:gaussianExampleUnbalanced}
+
+We still consider four classes but their model prior probabilities are
+$p_1=p_2=0.4$ and $p_3=p_4=0.1$. Once again, we considered two training data sets, one made of $3,000$ samples, the other of $10,000$ samples, drawn among the four classes according to these probabilities.
+The testing set considers $5,000$ data equally sampled among the two classes 3 and 4, the least frequent ones.
+In this example we therefore measure the prediction accuracy of low-frequency data.
+
+The first two covariates are still the most important ones, 
+however we slightly modified the Gaussian parameters 
+(the first two diagonal terms for $\Sigma_1$ and $\Sigma_2$ are now 2 and 1) to induce as best split rule 
+for a CART: $X_1\approx2$. This example hence becomes an illustration of the fragmentation problem we mentioned 
+earlier (Figure \@ref(fig:4Unif)). Indeed, the first cut produced by the eager RF algorithm -- if this covariate is sampled -- 
+will split the elements labeled 3 and 4 in half (at $X_1\approx2$). It implies the loss of some potentially relevant training data to predict those two classes. We hope local approaches can handle such an example which also contains very unbalanced classes proportions, see Figure \@ref(fig:gaussDisp). Once again we also consider the same scenario where we add $100$ additional noise variables drawn from uniform distributions on $[0,1]$. The results are presented in Table \@ref(tab:gaussUnbNoise10). Once again, only the results for $10,000$ training data are shown as the methods comparison is similar for $3,000$ data, at the price of a higher error rate (about 2\%).
+
+```{r gaussDisp, out.width="50%", fig.cap="Second Gaussian example: two first explanatory variables $X_1$ and $X_2$ ;    colors indicate the classes (1-sky blue, 2-purple, 3-sand, 4-dark green).", fig.align='center'}
+# Model probabilities (4 balanced classes)
+pi0 <- 0.40
+pi1 <- 0.40
+pi2 <- 0.10
+pi3 <- 0.10
+
+# Gaussian dimension
+l <- 20
+
+# Gaussian parameters
+mu0 <- c(c(0.8,3), rep(c(1,2.5), l/2-1)) ; Sigma0 <- diag(c(c(2,1), rep(c(3,1),l/2-1)) )
+mu1 <- c(c(3.2,3), rep(c(2.5,2.5), l/2-1)) ; Sigma1 <- diag(c(c(2,1), rep(c(3,5),l/2-1)) )
+mu2 <- c(c(2,1), rep(c(2,2.3),l/2-1)) ; Sigma2 <- diag( (rep(c(4,1),l/2) ) )
+mu3 <- c(c(2,0), rep(c(2,1.8),l/2-1)) ; Sigma3 <- diag( (rep(c(2.5,1),l/2) ) )
+
+# Number of training data
+n <- 3000
+# Sample class label
+classe <- sample(x = c(0,1,2,3), size = n, replace = TRUE, prob = c(pi0,pi1,pi2,pi3))
+classe <- sort(classe)
+
+couleur <- rep(safe_colorblind_palette[1], n)
+couleur[classe==1] <- safe_colorblind_palette[2]
+couleur[classe==2] <- safe_colorblind_palette[3]
+couleur[classe==3] <- safe_colorblind_palette[4]
+
+n0 <- sum(classe==0)
+n1 <- sum(classe==1)
+n2 <- sum(classe==2)
+n3 <- sum(classe==3)
+
+# Sample from the Gaussians
+x.train <- rbind(rmvnorm(n0, mu0, Sigma0),
+                 rmvnorm(n1, mu1, Sigma1),
+                 rmvnorm(n2, mu2, Sigma2),
+                 rmvnorm(n3, mu3, Sigma3))
+
+plot(x.train[,1], x.train[,2], col=couleur,xlab="X1",ylab="X2",pch=8,cex=0.8)
+
+```
+
+
+```{r gaussUnb10, message=FALSE, warning=FALSE, results="asis"}
+library(xtable)
+resTOT<-read.table("Gaussian-Unbalanced-No-Noise/Example-Gaussian-Unbalanced-No-Noise-Res-10000.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""))
+
+TableOrdered3=Table[c(1:3,5:10,17:19,4,11:16),]
+colnames(TableOrdered3)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered3)=NULL
+
+
+resTOT<-read.table("Gaussian-Unbalanced-With-Noise/Example-Gaussian-Unbalanced-With-Noise-Res-10000.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""))
+
+TableOrdered4=Table[c(1:3,5:10,17:19,4,11:16),]
+colnames(TableOrdered4)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered4)=NULL
+
+
+Table4=cbind(TableOrdered3,TableOrdered4[,3:4])
+
+knitr::kable(Table4,caption= "Second Gaussian example: prediction error rate (percentage), with 10000 training data. With 20 variables (columns 3 and 4), and with 100 additional noise variables (columns 5 and 6)",booktabs=T,label= "gaussUnbNoise10",row.names=NA)
+
+```
+
+In this example, when no additional noise is considered, bagging CARTs and Random forest have similar performance, which is once again slightly beaten by a Nearest-neighbors random forest with moderate number of neighbors. When the number of noise variable increases, surprisingly bagging Carts outperforms classic random forest, and is slightly beaten by the Local variable importance RF which manages to select important variables to build trees.
+
+Finally, we performed an independent experiment using the same unbalanced design with noise where we also included a comparison with LazyRF and the univariate and multivariate kernel approach on only 500 test data and 4 replicates. The total experiment took 41 days to run using 10 cores of a standard high performance computing cluster.
+The results are displayed in Table \@ref(tab:Small). Even though it is hard to compare the results on such small experiments (500 tests hardly cover a 23-dimensional space), there is no clear performance gain for methods LazyRF, Multi-K and Uni-K, who run up to 750 thousand times slower than a classic RF.
+
+
+```{r Small, message=FALSE, warning=FALSE, results="asis"}
+library(xtable)
+resTOT<-read.table("Gaussian-Unbalanced-With-Noise/Unbalanced-Noise-Small.Res.txt",header=T)
+resTime<-read.table("Gaussian-Unbalanced-With-Noise/Unbalanced-Noise-Small-time.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","Multi-K", "Uni-K")
+Characteristics<-c("","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","","")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""),round(apply(resTime,2,mean),1))
+Table[is.na(Table[,5]),5]<-""
+
+TableOrderedS=Table[c(1:2,4:9,16,3,10:15,17:18),]
+TableOrderedS=TableOrderedS[-12,]
+colnames(TableOrderedS)=c("Method","Parameters","Error rate","(sd)","RunTime (seconds)")
+rownames(TableOrderedS)=NULL
+
+
+knitr::kable(TableOrderedS,caption= "Smaller second Gaussian example: prediction error rate for only 500 test data, with runtime comparison",booktabs=T,label= "Small",row.names=NA)
+
+```
+
+
+## Spherical fragmented example {#subsec:SphereExample}
+
+We consider an example that combines a fragmentation situation with a spherical data distribution to challenge the splitting rules of standard random forests. Datapoints are drawn from a 3-dimensional Gaussian centered distribution with variance $4$ and null covariance. The classes are drawn with uneven probabilities from three labels depending on the location.
+
+For datapoints within a 2.5 distance from the origin:
+
+- if the angle with the first axis is less than 120° in the first 2 dimensions projection [$(x_1,x_2)$ projection], the class is 1 with probability 0.8, and 2 and 3 with probability 0.1 ;
+
+- if the angle with the first axis is greater than 240° in the first 2 dimensions projection, it is class 2 with probability 0.8 and 1 or 3 with probability 0.1 
+
+- if the angle is between 120° and 240°, and class 3 with probability 0.8, and 1 or 2 with probability 0.1 otherwise.
+
+If the data point is within a 2.5 to 3.75 distance to the origin, the label class is drawn as previously but considering the $(x_1,x_3)$ projections, and if the distance is greater than 3.75 we consider the $(x_2,x3)$ projections. An example is illustrated in Figure \@ref(fig:SpherFrag)
+
+In this example we performed a slightly different runtime comparison of all methods, conducting the experiment for only one test datapoint and using only one computing node. This allows a fairer comparison between methods which make use of global approaches and those that are entirely local. Results are given as fold-time the runtime of the classic RF, in Table \@ref(tab:Spherical)
+
+
+```{r SpherFrag, out.width="50%", fig.cap="Spherical fragmented example: two first explanatory variables $X_1$ and $X_2$ ;    colors indicate the class labels (1-sky blue, 2-purple, 3-sand).", fig.align='center'}
+set.seed(1)
+library(mvtnorm)
+
+num.train <- 10000
+n=num.train
+x.train <- rmvnorm(num.train,rep(0,3),diag(rep(4,3)))
+dist.origin.train <- sqrt(apply(x.train^2,1,sum))
+cosx=x.train[,1] / sqrt(apply(x.train[,c(1,3)]^2,1,sum))
+cosy=x.train[,2] / sqrt(apply(x.train[,c(1,2)]^2,1,sum))
+cosz=x.train[,3] / sqrt(apply(x.train[,c(2,3)]^2,1,sum))
+ind3 <- dist.origin.train>3.75
+ind2 <- dist.origin.train>2.5 & dist.origin.train<=3.75
+ind1 <- dist.origin.train<=2.5
+
+
+classe.train <- rep(0,num.train)
+for (i in 1:num.train)
+{
+  if (ind1[i] )
+  { 
+  	if (x.train[i,1]>0 & cosy[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.8,0.1,0.1)) } else   	if (x.train[i,1]<0 & cosy[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.8,0.1)) } else  classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.1,0.8))
+  }	
+  if (ind2[i]) 
+  { 
+  	if (x.train[i,2]>0 & cosz[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.8,0.1,0.1)) } else   	if (x.train[i,2]<0 & cosz[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.8,0.1)) } else  classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.1,0.8))
+  }	 
+  if (ind3[i]) 
+    { 
+  	if (x.train[i,3]>0 & cosx[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.8,0.1,0.1)) } else   	if (x.train[i,3]<0 & cosx[i]>(-1/2) ) 
+  		{classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.8,0.1)) } else  classe.train[i] <- sample(c(1,2,3), 1, prob=c(0.1,0.1,0.8))
+  }	
+}
+couleur <- rep(safe_colorblind_palette[1], n)
+couleur[classe.train==1] <- safe_colorblind_palette[1]
+couleur[classe.train==2] <- safe_colorblind_palette[2]
+couleur[classe.train==3] <- safe_colorblind_palette[3]
+# Graph generation
+plot(x.train[,1], x.train[,2], col=couleur,xlab="X1",ylab="X2",pch=8,cex=0.8)
+```
+
+In this example, once again bagging CARTs outperforms all other methods, while classic random forests are beaten by almost all other methods except nearest-neighbour Random Forests, who suffer most from the fragmentation issue. Local variable importance RF and Case-specific Random forests perform quite well. 
+
+
+```{r Sphere, message=FALSE, warning=FALSE, results="asis"}
+library(xtable)
+resTOT<-read.table("Spherical/Spherical.txt",header=T)
+resTOT<-100*resTOT
+resTime<-read.table("Spherical/Spherical-Time.txt",header=T)
+resTime<-resTime[1,]
+
+Identifier<-c("Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","CSRF","CSRF","CSRF", "DVSRF","DVSRF", "KV-RF","KV-RF","KV-RF","KV-RF", "NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","Nmin=5","Nmin=10","Nmin=50","Nmin=150","Nmin=250","Nmin=350","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean,na.rm=TRUE),paste("(",round(apply(resTOT,2,sd,na.rm=TRUE),3),")",sep=""),round(t(resTime[1,]/resTime[,2]),2))
+
+TableOrdered5=Table[c(1:2,4:9,16:18,3,10:15),]
+#TableOrdered5=Table
+colnames(TableOrdered5)=c("Method","Parameters","Error rate","(sd)", "Runtime (fold RF)")
+rownames(TableOrdered5)=NULL
+
+
+
+Table5=cbind(TableOrdered5)
+
+knitr::kable(Table5,caption= "Spherical fragmented example: prediction error rate (percentage), with 10000 training data, and runtime comparison",booktabs=T,label= "Spherical",row.names=NA)
+
+```
+
+
+
+
+## Population genetics example {#subsec:geneticsExample}
+
+We now compare a set of local strategies on a basic population genetics example
+introduced in @pudlo:etal:2016. The historical link between three populations of a given species is of interest. More precisely, we are interested in studying whether a third population emerged from a first or a second population, or whether it emerged from a mixture between the first two. This problem is hence a three classes classification question. The data is made of $1,000$ autosomal single-nucleotide polymorphisms (SNPs). 
+We assume that the distances between these loci on the genome are large enough to neglect linkage disequilibrium, we hence consider them as having independent ancestral genealogies.
+
+The data is summarized thanks to $d=48$ summary statistics available within the DIY\-ABC software for SNP markers [@cornuet:etal:2014], which is also used to simulate training and test sets 
+respectively of size $10,000$ and $1,000$, equally distributed among the three scenarios.
+Moreover, the data are constrained to be drawn in the $[-1;1]^2$ square on the linear discriminant analysis (LDA) axes projections graph, which is a region where scenarios are hard to discriminate, see Figure \@ref(fig:popGen-LDA).
+
+```{r popGen-LDA, out.width="40%", fig.cap="Population genetics example: projections on the LDA axes of the $10,000$ training instances ;     colors represent scenario indices: sky-blue for model 1, sand for model 2 and purple for model 3 ;    the hard to discriminate $[-1;1]^2$ region is represented by black dashed lines.", fig.align='center'}
+knitr::include_graphics("Fig4.png")
+```
+
+
+Similarly to the Gaussian mixture examples, the methods are run ten times on the same data. The averaged misclassification error rates and the associated standard deviation are displayed in Table \@ref(tab:GenPopResults).
+
+In this example again, bagging CARTs outperforms a classic random forest. Most local approaches can be tuned to reach a classic RF performance, but none manage to significantly outperform it, let alone reach bagging CARTs results.
+
+
+```{r GenPopResults, message=FALSE, warning=FALSE, results="asis"}
+library(xtable)
+resTOT<-read.table("Population-Genetics/Example-Population-Genetics-Res.txt",header=T)
+resTOT<-100*resTOT
+
+Identifier<-c("Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","CSRF","DVSRF","DVSRF","KV-RF","KV-RF","KV-RF","KV-RF","NN-RF","NN-RF","NN-RF")
+Characteristics<-c("","","","Nmin=50","Nmin=150","Nmin=250","k=3000,Bsel=100","k=3000,Bsel=50","alpha=1","alpha=0.75","alpha=0.5","alpha=0.25", "k=1000","k=1500","k=2500")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),3),")",sep=""))
+TableOrdered=Table[c(1:2,5:7,13:15,3,8:12),]
+colnames(TableOrdered)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered)=NULL
+
+knitr::kable(TableOrdered,caption= "Population Genetics example: prediction error rate (percentage), with 10000 training data and 1000 test data",booktabs=T,label= "GenPopResults",row.names=NA)
+
+```
+
+
+# Data accessibility and reproducibility {#reproducibility}
+
+
+The global computational time for the examples presented above represent several days of multiple cores usage and are therefore not directly proposed to the reader. All codes, data and session information are available at [github.com/jmm34/computo-local-tree-methods-for-classification](https://github.com/jmm34/computo-local-tree-methods-for-classification). Note that during the preparation of the manuscript we detect an [issue](https://github.com/imbs-hl/ranger/issues/615) in the implementation of the Case Specific Random Forests function (csrf) function of the R package ranger and have to redo quite a lot of calculation to ensure reproducibility. 
+
+In this section, we reproduce the first Gaussian example presented above (without additional noise) with only 500 training data, 100 test data and 5 replicates, to illustrate the methods and produce similar tables to Tables \@ref(tab:gaussEqNoise10) to \@ref(tab:GenPopResults).
+The results in themselves are not interpretable due to the low dimensionality of the test and training data, so most methods were only illustrated with one set of parameters. However, changing parameters value in the code is straightforward.
+
+```{r ToyEx, message=FALSE, warning=FALSE, eval=TRUE, results="asis", cache=TRUE}
+######## Toy example : Small balanced Gaussian example without Noise  ########
+
+#### Required packages
+library("xtable")
+library(mvtnorm)
+library(ranger)
+library(parallel)
+ncores <- detectCores()
+
+#### Set the seed of R's random number generator
+
+nReplicate <- 5
+resBayes <- resBagging <- resRF <- resLVIRF <- resCsrf5 <- resCsrf10 <- resDVSRF1 <- resKVRF1 <- resNNRF1 <- rep(0,nReplicate)
+
+for (k in 1:nReplicate)  {
+
+set.seed(1974+k)
+
+### Training data generation
+
+n <- 500
+pi0 <- 0.25
+pi1 <- 0.25
+pi2 <- 0.25
+pi3 <- 0.25
+l <- 20
+
+mu0 <- c(c(0.8,3), rep(c(1,2.5), l/2-1))
+Sigma0 <- diag(c(c(3,3), rep(c(3,1),l/2-1)) )
+mu1 <- c(c(3.2,3), rep(c(2.5,2.5), l/2-1))
+Sigma1 <- diag(c(c(3,3), rep(c(3,5),l/2-1)) )
+mu2 <- c(c(2,1), rep(c(2,2.3),l/2-1))
+Sigma2 <- diag( (rep(c(4,1),l/2) ) )
+mu3 <- c(c(2,0), rep(c(2,1.8),l/2-1))
+Sigma3 <- diag( (rep(c(2.5,1),l/2) ) )
+
+classe <- sample(x = c(0,1,2,3), size = n, replace = TRUE, prob = c(pi0,pi1,pi2,pi3))
+classe <- sort(classe)
+n0 <- sum(classe==0)
+n1 <- sum(classe==1)
+n2 <- sum(classe==2)
+n3 <- sum(classe==3)
+x.train <- rbind(rmvnorm(n0, mu0, Sigma0), rmvnorm(n1, mu1, Sigma1), rmvnorm(n2, mu2, Sigma2), rmvnorm(n3, mu3, Sigma3))
+
+### Test data generation
+
+nTest <- 100
+classeTest <- sample(c(0,1,2,3), size=nTest, prob=c(pi0,pi1,pi2,pi3), replace=TRUE)
+classeTest <- sort(classeTest)
+nTest0 <- sum(classeTest==0)
+nTest1 <- sum(classeTest==1)
+nTest2 <- sum(classeTest==2)
+nTest3 <- sum(classeTest==3)
+x.test <- rbind(rmvnorm(nTest0, mu0, Sigma0),
+                rmvnorm(nTest1, mu1, Sigma1),
+                rmvnorm(nTest2, mu2, Sigma2),
+                rmvnorm(nTest3, mu3, Sigma3))
+data.train <- data.frame(mod = as.factor(classe), x.train)
+colnames(x.test) <- colnames(data.train)[-1]
+
+#### Bayes classifier
+
+BayesClassifieur <- function(x){
+  c0 <- pi0*dmvnorm(x,mean=mu0,sigma=Sigma0)
+  c1 <- pi1*dmvnorm(x,mean=mu1,sigma=Sigma1)
+  c2 <- pi2*dmvnorm(x,mean=mu2,sigma=Sigma2)
+  c3 <- pi3*dmvnorm(x,mean=mu3,sigma=Sigma3)
+  return(c(0,1,2,3)[which.max(c(c0,c1,c2,c3))])
+}
+predBayes <- rep(NA, nTest)
+for(i in 1:nTest) predBayes[i] <- BayesClassifieur(x.test[i,])
+resBayes[k] <- mean(predBayes != classeTest)
+
+### Bagging
+
+baggedRf <- ranger(formula = mod~., data = data.train, num.trees = 100, 
+                   mtry = dim(x.train)[2], num.threads = ncores)
+predBagging <- predict(object = baggedRf, data = x.test, num.threads = ncores)
+resBagging[k] <- mean(predBagging$predictions != classeTest)
+
+#### Random Forests
+
+classicRF <- ranger(formula = mod~., data = data.train,
+                    num.trees = 100, num.threads = ncores)
+predRF <- predict(object = classicRF, data = x.test, num.threads = ncores)
+resRF[k] <-mean(predRF$predictions != classeTest)
+
+#### Local variable importance RF
+
+source("LocalVarImpRF.R")
+
+rf.ranger <- ranger(mod ~ ., data = data.train, num.trees = 100, num.threads = ncores)
+impxStd <- matrix(NA, nrow = nTest, ncol=dim(x.train)[2])
+for (i in 1:nTest) 
+  {
+  impxStd[i,] <- LocalVarImp(rf.ranger, x.test[i,,drop=FALSE])
+  }
+predLVIRF <- factor(c(),levels=levels(data.train$mod))
+# tp <- txtProgressBar(min = 1, max = nTest, style = 3, char = "*")
+for (i in 1:nTest)
+  {
+  rf.local.ranger <- ranger(mod ~ ., data = data.train, num.trees = 100, 
+                            split.select.weights = impxStd[i,], num.threads = ncores)
+  predLVIRF[i] <- predict(rf.local.ranger, data=x.test[i,,drop=FALSE])$predictions
+#  setTxtProgressBar(tp, i)
+  }
+resLVIRF[k] <- mean(predLVIRF != classeTest)
+
+#### Case Specific Random Forests
+
+## Nmin = 5
+
+predCsrf5 <- csrf(mod~., training_data = data.train, test_data = data.frame(x.test), params1 = list(num.trees=100, mtry = dim(x.train)[2], min.node.size = 5, num.threads = ncores), params2 = list(num.trees=100, num.threads = ncores))
+resCsrf5[k] <- mean(predCsrf5 != classeTest)
+
+## Nmin = 10
+
+predCsrf10 <- csrf(mod~., training_data = data.train, test_data = data.frame(x.test), params1 = list(num.trees=100, mtry = dim(x.train)[2], min.node.size = 10, num.threads = ncores), params2 = list(num.trees=100, num.threads = ncores))
+resCsrf10[k] <- mean(predCsrf10 != classeTest)
+
+#### Local dynamic selection RF
+
+source("DynamicVotingWithSelectionRF.R")
+
+## 100 neighbors, we keep 100 best trees (all)
+
+predDVSRF1 <- dynamicVoting(formula = mod~., data = data.train, dataTest = data.frame(x.test), K = 100, ntree = 100, ntreeToKeep = 100, ncores = ncores)
+resDVSRF1[k] <- mean(predDVSRF1$prediction !=  classeTest)
+
+source("KernelVotingRF.R")
+
+## alpha = 0.5
+
+predKVRF1 <- kernelVoting(formula = mod~., data = data.train, dataTest = data.frame(x.test), ntree = 100, ncores = ncores, rule = "quantile", alpha = 0.5)
+resKVRF1[k] <- mean(predKVRF1$prediction != classeTest)
+
+#### Nearest-neighbors followed by classic RF
+
+madInit <- apply(X = x.train, 2, mad)
+
+## 100 NN
+
+K <- 250
+predNNRF1 <- factor(c(),levels=levels(data.train$mod))
+# tp <- txtProgressBar(min = 1, max = nTest, style = 3, char = "*")
+for(i in 1:nTest)
+  {
+  distances <- sapply(1:n, function(X) sqrt(mean( ( (x.train[X,]-x.test[i,])/madInit )^2)) )
+  ord <- order(distances)
+  toKeep <- ord[1:K]
+  data.trainNN <- data.train[toKeep,]
+  rfNN <- ranger(formula = mod~., data = data.trainNN, num.trees = 100, num.threads=ncores)
+  predNNRF1[i] <- predict(rfNN, data=data.frame(x.test[i,,drop=FALSE]), num.threads=ncores)$predictions
+#  setTxtProgressBar(tp, i)
+  }
+resNNRF1[k] <- mean(predNNRF1 != classeTest)
+}
+resTOT <- cbind(resBayes,resBagging,resRF,resLVIRF,resCsrf5,resCsrf10,resDVSRF1,resKVRF1,resNNRF1)
+resTOT<-100*resTOT
+
+Identifier<-c("Bayes classifier","Bagged CARTs","Random forest","LVI-RF","CSRF","CSRF","DVSRF","KV-RF","NN-RF")
+Characteristics<-c("","","","","Nmin=5","Nmin=10","k=100,Bsel=100","","k=250")
+Table=cbind(Identifier,Characteristics,apply(resTOT,2,mean),paste("(",round(apply(resTOT,2,sd),2),")",sep=""))
+
+TableOrdered=Table[c(1:3,5:6,9,4,7,8),]
+colnames(TableOrdered)=c("Method","Parameters","Error rate","(sd)")
+rownames(TableOrdered)=NULL
+
+knitr::kable(TableOrdered,caption= "Toy example: prediction error rate (percentage)",booktabs=T,label= "ToyEx",row.names=NA)
+```
+
+
+# Discussions {#sec:discussions}
+
+In this paper, we review, discuss and propose local tree-based methods strategies taking into account a specific instance during the learning process in the context of classification problems. 
+The results are not up to our expectations. We considered four examples where local methods seemed useful but we did not obtained conclusive results.
+
+Our proposal to introduce weights in the splitting criterion (see Section \@ref(sec:localSplittingRules): LazyDT and kernel approaches) is problematic. 
+Putting too high weights around $\xs$ results in irrelevant cut-points, closer to $\xs$ 
+compared to RF. It induces large correlations between the trees in the forest, and the 
+quality of prediction is impacted negatively. This is why for the kernel approaches a bandwith of quantile $\alpha=1$ is preferred. With this choice, 
+even if it localized the trees, we obtained results very similar if not worse than those of RF, at the cost of very high computational complexity. Less computationally intensive but as disappointing is the kernel voting RF strategy.
+ 
+The CSRF of @xu:etal:2016 (see Section \@ref(subsec:weightingIndividuals)), the nearest neighbor weights (Section \@ref(subsec:nearest-neighbours)) and the local weighting 
+of covariates (Section \@ref(sec:weightingCovariates)) strategies can give good performance but depend on tuning parameters.
+For instance, the CSRF brings better performance when the tree depth is low, i.e. high $\Nmin$.
+However, generally, results provided by these local methods are very similar to eager ones, and no great benefit is observed on our three examples.
+When looking at the very small benefits in terms of prediction error rate compared to the non-local approaches, we can say that local strategies are clearly not worth the additional computational cost. Especially since most of them require the choice 
+of a tuning parameter, characterizing the weights given to instances surrounding $\xs$.
+ 
+We have not considered here the case of regression problems, for which local tree-based methods have also been proposed. For instance the CSRF, the nearest neighbor weights and the dynamic voting with selection random forests are directly applicable to regression forests, and in most cases already implemented. Similarly, our propositions regarding local weighting of covariates, and local splitting criterion using kernels would easily be extendable to regression problems. In a local regression framework, @friedberg2020local consider a two-step approach where the response $y^\star$ is predicted from a locally weighted ridge regression using weights from a modified random forest. This forest is built with a modified splitting criterion which minimizes the residuals in each leaf after fitting a ridge regression to predict $y_j$ from $x_j$.
+Whether these methods improve the original random forest in the case of regression is still an open question, but our results in the case of classification are not optimistic.
+
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```
+
+# References
