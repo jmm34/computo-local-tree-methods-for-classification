@@ -10,7 +10,7 @@ on:
       - master
 
 env: # Change this if needed
-  Rmarkdown-file:   LocalForest.Rmd
+  Rmarkdown-file:   LocalForest-revision.Rmd
 
 jobs:
   build_computorticle:
